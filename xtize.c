@@ -42,6 +42,7 @@ int LoadForDebugging(const char *program, struct ExecParameters *state)
 void far EnterSingleStep(struct ExecParameters far *state);
 void interrupt CountingSS();
 long far GetCount(void);
+void interrupt EmulatingSS();
 
 int main(int argc, char** argv)
 {
@@ -70,8 +71,8 @@ int main(int argc, char** argv)
 		fputs("Error\n", stderr);
 		return 1;
 	}
-	setvect(1, CountingSS);
+	setvect(1, EmulatingSS);
 	EnterSingleStep(&p);
-	printf("\n%ld steps observed", GetCount());
+	//printf("\n%ld steps observed", GetCount());
 	return 0;
 }

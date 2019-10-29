@@ -50,4 +50,64 @@ PUBLIC _GetCount
 	mov		ax, [cs:WORD PTR count]
 	mov		dx, [cs:WORD PTR count+2]
 	retf
+
+; Error message with courtesy to a well-known un-fellow from the MBR
+uhmsg:
+	db 		"286 CHECK", 0
+unhandled:
+	mov		ax,1h
+	int		10h
+	mov		ah, 0eh
+	mov		si, offset uhmsg
+uhloop:
+	lods    BYTE PTR [cs:si]
+	int		10h
+	cmp		al, 0
+	jne		uhloop
+	hlt
+	jmp 	$-1
+
+emulate_enter:
+	cmp     byte ptr [ds:bx+3], 0h  ; we don't support nested frame enter
+	jne		unhandled
+	mov		WORD PTR [cs:emuenter_oldax], ax
+	mov     ax, WORD PTR [cs:emuss_oldbp]
+	xchg	ax, [bp + 4] ; replace caller flags by old bp (PUSH BP)
+
+	add     sp, 4                 ; for PUSH BP
+	mov     WORD PTR [cs:emuss_oldbp], sp  ; MOV BP, SP part of ENTER
+	sub		sp, 6
+
+	sub		sp, word ptr [bx + 1] ; SUB SP,#imm16 part of ENTER
+	mov     bp, sp
+	add     bx, 4
+	mov     [bp + 0], bx          ; original IP
+	mov     [bp + 2], ds          ; original CS
+	mov     [bp + 4], ax          ; original flags
+	mov     ax, 1234h
+	emuenter_oldax = $-2
+	jmp		emu_exit
+
+_EmulatingSS:
+PUBLIC _EmulatingSS
+	mov		WORD PTR [cs:emuss_oldbp], bp
+	mov		WORD PTR [cs:emuss_oldbx], bx
+	mov		WORD PTR [cs:emuss_oldds], ds
+	mov		bp, sp
+	mov		ds, [bp + 2] ; caller CS
+	mov     bx, [bp + 0] ; caller IP
+	cmp     byte ptr [ds:bx], 0C8h
+	ja		above_enter
+	je		emulate_enter
+above_enter:
+below_enter:
+emu_exit:
+	mov		bx, 1234h
+	emuss_oldds = $-2
+	mov		ds, bx
+	mov     bx, 1234h
+	emuss_oldbx = $-2
+	mov     bp, 1234h
+	emuss_oldbp = $-2
+	iret
 END
