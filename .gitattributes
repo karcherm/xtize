@@ -1,0 +1,5 @@
+# Declare text and binary files
+
+*.c	text
+*.asm	text
+*.prj	-text
