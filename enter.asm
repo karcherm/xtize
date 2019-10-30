@@ -79,14 +79,24 @@ emulate_enter:
 	sub		sp, 6
 
 	sub		sp, word ptr [bx + 1] ; SUB SP,#imm16 part of ENTER
-	mov     bp, sp
 	add     bx, 4
+elcommon:
+	mov     bp, sp
 	mov     [bp + 0], bx          ; original IP
 	mov     [bp + 2], ds          ; original CS
 	mov     [bp + 4], ax          ; original flags
 	mov     ax, 1234h
 	emuenter_oldax = $-2
 	jmp		emu_exit
+
+emulate_leave:
+	inc		bx					  ; skip LEAVE opcode
+	mov		WORD PTR [cs:emuenter_oldax], ax
+	mov		ax, [bp + 4] 		  ; get original flags
+	mov		sp, WORD PTR [cs:emuss_oldbp] ; MOV SP, BP part of LEAVE
+	pop		WORD PTR [cs:emuss_oldbp]	  ; POP BP part of LEAVE
+	sub		sp, 6
+	jmp		elcommon
 
 _EmulatingSS:
 PUBLIC _EmulatingSS
@@ -100,6 +110,8 @@ PUBLIC _EmulatingSS
 	ja		above_enter
 	je		emulate_enter
 above_enter:
+	cmp		byte ptr [ds:bx], 0C9h
+	je		emulate_leave
 below_enter:
 emu_exit:
 	mov		bx, 1234h
