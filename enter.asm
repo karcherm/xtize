@@ -76,11 +76,12 @@ emulate_enter:
 
 	add     sp, 4                 ; for PUSH BP
 	mov     WORD PTR [cs:emuss_oldbp], sp  ; MOV BP, SP part of ENTER
-	sub		sp, 6
 
 	sub		sp, word ptr [bx + 1] ; SUB SP,#imm16 part of ENTER
 	add     bx, 4
 elcommon:
+	sub		sp, 6
+elcommon_:
 	mov     bp, sp
 	mov     [bp + 0], bx          ; original IP
 	mov     [bp + 2], ds          ; original CS
@@ -95,8 +96,17 @@ emulate_leave:
 	mov		ax, [bp + 4] 		  ; get original flags
 	mov		sp, WORD PTR [cs:emuss_oldbp] ; MOV SP, BP part of LEAVE
 	pop		WORD PTR [cs:emuss_oldbp]	  ; POP BP part of LEAVE
-	sub		sp, 6
 	jmp		elcommon
+
+emulate_push16:
+	mov		WORD PTR [cs:emuenter_oldax], ax
+	mov		ax, word ptr [bx + 1]
+	inc		bx
+pushcommon:
+	add		bx,	2
+	xchg	ax, [bp + 4] ; replace caller flags by old bp (PUSH BP)
+	sub		sp, 2
+	jmp		elcommon_
 
 _EmulatingSS:
 PUBLIC _EmulatingSS
@@ -112,7 +122,20 @@ PUBLIC _EmulatingSS
 above_enter:
 	cmp		byte ptr [ds:bx], 0C9h
 	je		emulate_leave
+	jmp		emu_exit
+
 below_enter:
+	cmp		byte ptr [ds:bx], 068h
+	je		emulate_push16
+	jb		below_push16
+	cmp     byte ptr [ds:bx], 06Ah
+	jne		emu_exit
+	mov		WORD PTR [cs:emuenter_oldax], ax
+	mov		al, byte ptr [bx + 1]
+	cwd
+	jmp		pushcommon
+
+below_push16:
 emu_exit:
 	mov		bx, 1234h
 	emuss_oldds = $-2
