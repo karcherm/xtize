@@ -70,7 +70,6 @@ uhloop:
 emulate_enter:
 	cmp     byte ptr [ds:bx+3], 0h  ; we don't support nested frame enter
 	jne		unhandled
-	mov		WORD PTR [cs:emuenter_oldax], ax
 	mov     ax, WORD PTR [cs:emuss_oldbp]
 	xchg	ax, [bp + 4] ; replace caller flags by old bp (PUSH BP)
 
@@ -86,20 +85,16 @@ elcommon_:
 	mov     [bp + 0], bx          ; original IP
 	mov     [bp + 2], ds          ; original CS
 	mov     [bp + 4], ax          ; original flags
-	mov     ax, 1234h
-	emuenter_oldax = $-2
 	jmp		emu_exit
 
 emulate_leave:
 	inc		bx					  ; skip LEAVE opcode
-	mov		WORD PTR [cs:emuenter_oldax], ax
 	mov		ax, [bp + 4] 		  ; get original flags
 	mov		sp, WORD PTR [cs:emuss_oldbp] ; MOV SP, BP part of LEAVE
 	pop		WORD PTR [cs:emuss_oldbp]	  ; POP BP part of LEAVE
 	jmp		elcommon
 
 emulate_push16:
-	mov		WORD PTR [cs:emuenter_oldax], ax
 	mov		ax, word ptr [bx + 1]
 	inc		bx
 pushcommon:
@@ -113,28 +108,29 @@ PUBLIC _EmulatingSS
 	mov		WORD PTR [cs:emuss_oldbp], bp
 	mov		WORD PTR [cs:emuss_oldbx], bx
 	mov		WORD PTR [cs:emuss_oldds], ds
+	mov		WORD PTR [cs:emuss_oldax], ax
 	mov		bp, sp
 	mov		ds, [bp + 2] ; caller CS
 	mov     bx, [bp + 0] ; caller IP
-	cmp     byte ptr [ds:bx], 0C8h
+	mov		al, [ds:bx]
+	cmp     al, 0C8h
 	ja		above_enter
 	je		emulate_enter
 above_enter:
-	cmp		byte ptr [ds:bx], 0C9h
+	cmp		al, 0C9h
 	je		emulate_leave
 	jmp		emu_exit
 
 below_enter:
-	cmp		byte ptr [ds:bx], 068h
+	cmp		al, 068h
 	je		emulate_push16
 	jb		below_push16
-	cmp     byte ptr [ds:bx], 06Ah
-	jne		emu_exit
-	mov		WORD PTR [cs:emuenter_oldax], ax
-	mov		al, byte ptr [bx + 1]
-	cwd
+	cmp     al, 06Ah
+	jne		between_6A_and_C8
+	mov		al, [ds:bx + 1]
+	cbw
 	jmp		pushcommon
-
+between_6A_and_C8:
 below_push16:
 emu_exit:
 	mov		bx, 1234h
@@ -144,5 +140,7 @@ emu_exit:
 	emuss_oldbx = $-2
 	mov     bp, 1234h
 	emuss_oldbp = $-2
+	mov     ax, 1234h
+	emuss_oldax = $-2
 	iret
 END
