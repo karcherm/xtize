@@ -113,11 +113,6 @@ PUBLIC _EmulatingSS
 	cmp     al, 0C8h
 	ja		above_enter
 	je		emulate_enter
-above_enter:
-	cmp		al, 0C9h
-	je		emulate_leave
-	jmp		emu_exit
-
 below_enter:
 	cmp		al, 068h
 	je		emulate_push16
@@ -127,6 +122,10 @@ below_enter:
 	lodsb
 	cbw
 	jmp		pushcommon
+above_enter:
+	cmp		al, 0C9h
+	je		emulate_leave
+	jmp		emu_exit
 between_6A_and_C8:
 below_push16:
 emu_exit:
