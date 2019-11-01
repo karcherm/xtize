@@ -118,7 +118,8 @@ below_enter:
 	je		emulate_push16
 	jb		below_push16
 	cmp     al, 06Ah
-	jne		between_6A_and_C8
+	ja		between_6A_and_C8
+	jb		emulate_imul
 	lodsb
 	cbw
 	jmp		pushcommon
@@ -167,9 +168,7 @@ ofs_common:
 	mov     WORD PTR [cs:sr_dest_segment], ds
 	mov		[bp + 2], cs ; return CS
 	mov     [bp + 0], OFFSET sr_inject ; return IP
-
 below_push16:
-between_6A_and_C0:
 between_C1_and_C8:
 emu_exit:
 	mov		si, 1234h
@@ -182,6 +181,87 @@ emu_exit:
 	mov     ax, 1234h
 	emuss_oldax = $-2
 	iret
+between_6A_and_C0:
+    cmp     al, 6Bh
+	jnz     emu_exit
+emulate_imul:
+    push    bx
+    mov     ah, al
+    lodsb
+    cmp     al, 0C0h
+    jb      imul_nonsrcax
+    test    al, 7
+    jnz     imul_nonsrcax
+    mov     BYTE PTR [cs:imul_srcax_mov + 1], al
+    shr     al, 1
+    shr     al, 1
+    shr     al, 1
+    add     al, 90h - (0C0h SHR 3)
+    mov     BYTE PTR [cs:imul_srcax_xchg], al
+    test    ah, 2
+    mov     bx, offset imul_srcax_inject
+    jmp     SHORT imul_do_immed
+imul_nonsrcax:
+    test    al, 38h
+    jnz     imul_nonax
+    or      al, 28h
+    mov     BYTE PTR [cs:imul_dstax_instruction+1], al
+    sub     al, 40h
+    xchg    ax, bx
+    mov     ax, 9090h
+    js      imul_dstax_ofsdone
+    test    al, 40h
+    jz      imul_dstax_ofs8
+    lodsw
+    jmp     SHORT imul_dstax_ofsdone
+imul_dstax_ofs8:
+    lodsb
+imul_dstax_ofsdone:
+    mov     WORD PTR [cs:imul_dstax_instruction+2], ax
+    test    bh, 2
+    mov     bx, offset imul_dstax_inject
+    jmp     SHORT imul_do_immed
+imul_nonax:
+    mov     bx, ax
+    and     al, 38h
+    shr     al, 1
+    shr     al, 1
+    shr     al, 1
+    add     al, 90h
+    mov     BYTE PTR [cs:imul_nonax_xchg], al
+    xchg    ax, bx
+    and     al, 0C7h
+    or      al, 28h
+    mov     BYTE PTR [cs:imul_nonax_instruction+1], al
+    sub     al, 40h
+    xchg    ax, bx
+    mov     ax, 9090h
+    js      imul_nonax_ofsdone
+    test    al, 40h
+    jz      imul_nonax_ofs8
+    lodsw
+    jmp     SHORT imul_nonax_ofsdone
+imul_nonax_ofs8:
+    lodsb
+imul_nonax_ofsdone:
+    mov     WORD PTR [cs:imul_nonax_instruction+2], ax
+    test    bh, 2
+    mov     bx, offset imul_nonax_inject
+imul_do_immed:
+    jnz     short imul_immed8
+    lodsw
+    jmp     short imul_immed_done
+imul_immed8:
+    lodsb
+    cbw
+imul_immed_done:
+    mov     WORD PTR [cs:imul_immed], ax
+    mov     WORD PTR [cs:imul_dest_segment], ds
+    mov     WORD PTR [cs:imul_dest_offset], si
+    mov     [bp+2], cs
+    mov     [bp+0], bx
+    pop     bx
+    jmp     emu_exit
 
 ; This code gets injected after IRET by patching the return address
 ; to point here and patching the original return address into this
@@ -213,4 +293,40 @@ sr_inject:
 	db	0EAh
 sr_dest_offset dw 5678h
 sr_dest_segment dw 1234h
+
+imul_nonax_inject:
+    push    ax
+    push    dx
+    mov     ax, 1234h
+  imul_immed             = $-2
+  imul_nonax_instruction = $
+    imul    WORD PTR ds:1234h
+    pop     dx
+  imul_nonax_xchg        = $
+    xchg    ax, bx
+    pop     ax
+imul_jmpout:
+    ;jmp    FAR 1234h:5678h
+    db      0EAh
+imul_dest_offset dw 5678h
+imul_dest_segment dw 1234h
+
+imul_dstax_inject:
+    push    dx
+    mov     ax, WORD PTR [cs:imul_immed]
+  imul_dstax_instruction = $
+    imul    WORD PTR ds:1234h
+    pop     dx
+    jmp     short imul_jmpout
+
+imul_srcax_inject:
+  imul_srcax_mov  = $
+    mov     ax, [bx]
+    push    dx
+    imul    WORD PTR [cs:imul_immed]
+    pop     dx
+  imul_srcax_xchg = $
+    xchg    ax, bx
+    jmp     short imul_jmpout
+
 END
