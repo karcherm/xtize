@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include <dir.h>
 #include <dos.h>
 
@@ -46,6 +47,7 @@ void interrupt EmulatingSS();
 
 int main(int argc, char** argv)
 {
+	static int i = 0x1234;
 	struct ExecParameters p;
 	char *target;
 	p.cmdline = MK_FP(_psp, 0x81);
@@ -54,6 +56,38 @@ int main(int argc, char** argv)
 	{
 		fputs("Missing program name\n", stderr);
 		return 2;
+	}
+	if (stricmp(argv[1], "/T") == 0)
+	{
+		puts("Test mode.");
+		setvect(0xA1, EmulatingSS);
+		asm {
+			int 0xA1
+			//enter 10, 0
+			db 0xC8, 0x0A, 0x00, 0x00
+			int 0xA1
+			// push 0
+			db 0x6A, 0x00
+			int 0xA1
+			// push 0x80
+			db 0x68, 0x80, 0x00
+			int 0xA1
+			// shl [WORD PTR bp-12], 3
+			db 0xC1, 0x66, 0xF4, 0x03
+			int 0xA1
+			//leave
+			db 0xC9
+			mov al, 0xF7
+			int 0xA1
+			//rol al, 2
+			db 0xC0, 0xC0, 2
+			int 0xA1
+			//ror [i], 3
+			db 0xC1, 0x0E
+			dw offset i
+			db 3
+		}
+		return 0;
 	}
 	target = searchpath(argv[1]);
 	if (target == NULL)
