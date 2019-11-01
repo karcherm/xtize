@@ -85,7 +85,7 @@ elcommon_:
 	mov     [bp + 0], si          ; original IP
 	mov     [bp + 2], ds          ; original CS
 	mov     [bp + 4], ax          ; original flags
-	jmp		emu_exit
+	jmp		emu_redo
 
 emulate_leave:
 	mov		ax, [bp + 4] 		  ; get original flags
@@ -100,12 +100,21 @@ pushcommon:
 	sub		sp, 2
 	jmp		elcommon_
 
+; Entry-Points:
+;  emu_redo - jump here instead of emu_exit if an instruction has
+;             been completely emulated, and emuss_oldXX contain
+;             the new register values.
+;  emu_reenter - jump here if an injected function is finished.
+;                store oldbp before jumping here, and create a correct
+;                interrupt stack frame returning to the final target
 _EmulatingSS:
 PUBLIC _EmulatingSS
 	mov		WORD PTR [cs:emuss_oldbp], bp
+emu_reenter:
 	mov		WORD PTR [cs:emuss_oldsi], si
 	mov		WORD PTR [cs:emuss_oldds], ds
 	mov		WORD PTR [cs:emuss_oldax], ax
+emu_redo:
 	mov		bp, sp
 	mov		ds, [bp + 2] ; caller CS
 	mov     si, [bp + 0] ; caller IP
@@ -119,14 +128,16 @@ below_enter:
 	jb		below_push16
 	cmp     al, 06Ah
 	ja		between_6A_and_C8
-	jb		emulate_imul
+	jnb		NOT_emulate_imul
+    jmp     emulate_imul
+NOT_emulate_imul:
 	lodsb
 	cbw
 	jmp		pushcommon
 above_enter:
 	cmp		al, 0C9h
 	je		emulate_leave
-	jmp		emu_exit
+	jmp		SHORT emu_exit
 between_6A_and_C8:
 	cmp		al, 0C0h
 	jb		between_6A_and_C0
@@ -164,10 +175,12 @@ ofs_common:
 	mov		WORD PTR [cs:sr_xchg1 + 2], ax
 	lodsb
 	mov		BYTE PTR [cs:sr_patch_count], al
-	mov		WORD PTR [cs:sr_dest_offset], si
-	mov     WORD PTR [cs:sr_dest_segment], ds
-	mov		[bp + 2], cs ; return CS
 	mov     [bp + 0], OFFSET sr_inject ; return IP
+exit_for_reenter:
+	mov		[bp + 2], cs ; return CS
+    and     BYTE PTR [bp + 5], NOT 1        ; Clear TF
+	mov		WORD PTR [cs:reenter_offset], si
+	mov     WORD PTR [cs:reenter_segment], ds
 below_push16:
 between_C1_and_C8:
 emu_exit:
@@ -256,12 +269,9 @@ imul_immed8:
     cbw
 imul_immed_done:
     mov     WORD PTR [cs:imul_immed], ax
-    mov     WORD PTR [cs:imul_dest_segment], ds
-    mov     WORD PTR [cs:imul_dest_offset], si
-    mov     [bp+2], cs
     mov     [bp+0], bx
     pop     bx
-    jmp     emu_exit
+    jmp     exit_for_reenter
 
 ; This code gets injected after IRET by patching the return address
 ; to point here and patching the original return address into this
@@ -289,10 +299,18 @@ sr_inject:
 	pop		cx
 	sr_xchg2 = $
 	xchg	ax, WORD PTR [ds:1234h]		; TODO: segment prefixes
-	;jmp		FAR 1234h:5678h
-	db	0EAh
-sr_dest_offset dw 5678h
-sr_dest_segment dw 1234h
+prepare_reenter:
+    pushf
+	mov		WORD PTR [cs:emuss_oldbp], bp
+    mov     bp, sp
+    or      BYTE PTR [bp + 1], 1        ; Re-Set TF
+    mov     bp, 1234h
+  reenter_segment = $-2
+    push    bp
+    mov     bp, 5678h
+  reenter_offset  = $-2
+    push    bp
+    jmp     emu_reenter
 
 imul_nonax_inject:
     push    ax
@@ -305,11 +323,7 @@ imul_nonax_inject:
   imul_nonax_xchg        = $
     xchg    ax, bx
     pop     ax
-imul_jmpout:
-    ;jmp    FAR 1234h:5678h
-    db      0EAh
-imul_dest_offset dw 5678h
-imul_dest_segment dw 1234h
+    jmp     prepare_reenter
 
 imul_dstax_inject:
     push    dx
@@ -317,7 +331,7 @@ imul_dstax_inject:
   imul_dstax_instruction = $
     imul    WORD PTR ds:1234h
     pop     dx
-    jmp     short imul_jmpout
+    jmp     prepare_reenter
 
 imul_srcax_inject:
   imul_srcax_mov  = $
@@ -327,6 +341,6 @@ imul_srcax_inject:
     pop     dx
   imul_srcax_xchg = $
     xchg    ax, bx
-    jmp     short imul_jmpout
+    jmp     prepare_reenter
 
 END
