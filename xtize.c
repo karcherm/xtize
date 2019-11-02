@@ -58,7 +58,10 @@ int main(int argc, char** argv)
 	static int i = 0x1234;
 	struct ExecParameters p;
 	char *target;
+    p.env_segment = 0;
 	p.cmdline = MK_FP(_psp, 0x81);
+    p.arg1 = 0;
+    p.arg2 = 0;
 
 	if (argc == 1)
 	{
@@ -163,6 +166,8 @@ int main(int argc, char** argv)
 		p.cmdline++;
 	while(*p.cmdline > ' ')
 		p.cmdline++;
+    p.cmdline--;
+    *p.cmdline = *(unsigned char*)(MK_FP(_psp, 0x80)) - (FP_OFF(p.cmdline) - 0x80);
 	if (LoadForDebugging(target, &p) < 0)
 	{
 		fputs("Error\n", stderr);
