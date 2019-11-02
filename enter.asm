@@ -87,6 +87,30 @@ PUBLIC _GetCount
     mov     dx, [cs:WORD PTR count+2]
     retf
 
+dispatch_table1:
+    db      256 dup (0)
+    org dispatch_table1 + 068h
+    db      6                   ; PUSH imm16
+    db      10                  ; IMUL r16, r/m16, imm16
+    db      8                   ; PUSH imm8
+    db      10                  ; IMUL r16, r/m16, imm8
+    org dispatch_table1 + 0C0h
+    db      12                  ; shift/rotate r8, imm8
+    db      12                  ; shift/rotate r16, imm8
+    org dispatch_table1 + 0C8h
+    db      2                   ; ENTER
+    db      4                   ; LEAVE
+    org dispatch_table1 + 100h
+
+dispatch_table2:
+    dw      OFFSET emu_exit
+    dw      OFFSET emulate_enter
+    dw      OFFSET emulate_leave
+    dw      OFFSET emulate_push16
+    dw      OFFSET emulate_push8
+    dw      OFFSET emulate_imul
+    dw      OFFSET emulate_shiftrotate
+
 ; Error message with courtesy to a well-known un-fellow from the MBR
 uhmsg:
     db      "286 CHECK", 0
@@ -150,38 +174,23 @@ emu_reenter:
     mov     WORD PTR [cs:emuss_oldsi], si
     mov     WORD PTR [cs:emuss_oldds], ds
     mov     WORD PTR [cs:emuss_oldax], ax
+    mov     WORD PTR [cs:emuss_oldbx], bx
 emu_redo:
     mov     bp, sp
     mov     ds, [bp + 2] ; caller CS
     mov     si, [bp + 0] ; caller IP
     lodsb
-    cmp     al, 0C8h
-    ja      above_enter
-    je      emulate_enter
-below_enter:
-    cmp     al, 068h
-    je      emulate_push16
-    jnb     NOT_below_push16
-    jmp     below_push16
-NOT_below_push16:
-    cmp     al, 06Ah
-    ja      between_6A_and_C8
-    jnb     NOT_emulate_imul
-    jmp     emulate_imul
-NOT_emulate_imul:
+    mov     ah, 0
+    mov     bx, ax
+    mov     bl, BYTE PTR cs:[bx + offset dispatch_table1]
+    jmp     WORD PTR cs:[bx + offset dispatch_table2]
+
+emulate_push8:
     lodsb
     cbw
     jmp     pushcommon
-above_enter:
-    cmp     al, 0C9h
-    je      emulate_leave
-    jmp     SHORT emu_exit
-between_6A_and_C8:
-    cmp     al, 0C0h
-    jb      between_6A_and_C0
-    cmp     al, 0C1h
-    ja      between_C1_and_C8
 
+emulate_shiftrotate:
     add     al, 12h     ; C0 -> D2, C1 -> D3
     mov     BYTE PTR [cs:sr_patch_opcode], al
     add     al, 86h - 0D2h ; generate 8-bit/16-bit XCHG opcode
@@ -234,12 +243,11 @@ emu_exit:
     emuss_oldbp = $-2
     mov     ax, 1234h
     emuss_oldax = $-2
+    mov     bx, 1234h
+    emuss_oldbx = $-2
     iret
-between_6A_and_C0:
-    cmp     al, 6Bh
-    jnz     emu_exit
+
 emulate_imul:
-    push    bx
     mov     ah, al
     lodsb
     cmp     al, 0C0h
@@ -311,7 +319,6 @@ imul_immed8:
 imul_immed_done:
     mov     WORD PTR [cs:imul_immed], ax
     mov     [bp+0], bx
-    pop     bx
     jmp     exit_for_reenter
 
 ; This code gets injected after IRET by patching the return address
