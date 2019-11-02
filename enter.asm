@@ -1,6 +1,24 @@
 .MODEL LARGE
 
 .CODE
+
+; Wrapper for int16 that ensures calling INT16 does not clear the TF.
+; Many PC BIOSes terminate function 01 (Poll keyboard status) with RETF 2
+; instead of IRET to pass the zero flag to the caller. This misses re-setting
+; the TF, thus effectively disabling the emulator.
+HelperInt16:
+    pushf
+    db      09Ah    ; CALL FAR
+oldint16ptr dd ?
+    push    bp
+    mov     bp, sp
+    push    ax
+    lahf
+    mov     [bp + 6], ah    ; Low 8 bits include all status flags except V
+    pop     ax
+    pop     bp
+    iret
+
 oldsp	dw ?
 oldss	dw ?
 
@@ -9,11 +27,23 @@ PUBLIC	_EnterSingleStep
 	push 	bp
 	mov  	bp,sp
 	push	ds
+    ; Install TF-resetting helper
+    mov     ax, 3516h
+    int     21h
+    mov     WORD PTR [cs:oldint16ptr], bx
+    mov     WORD PTR [cs:oldint16ptr+2], es
+    mov     ax, 2516h
+    push    cs
+    pop     ds
+    mov     dx, OFFSET HelperInt16
+    int     21h
+    ; Activate callee PSP
 	les		si, [bp + 6]   	  ; state block
 	mov		bx, [es:si + 22]  ; new PSP
 	mov		ah, 50h
 	int		21h
 
+    ; Set up callee entry point registers (including TF) and save old stack
 	mov		bx, [es:si + 22]
 	mov		di, [es:si + 14]  ; new stack pointer
 	mov		[cs:oldsp], sp
@@ -32,8 +62,14 @@ PUBLIC	_EnterSingleStep
 	mov     [ds:WORD PTR 0Ah], offset RETURNTO
 	iret
 RETURNTO:
+    ; Restore stack
 	mov		ss, [cs:oldss]
 	mov		sp, [cs:oldsp]
+    ; Uninstall helpers
+    mov     ax, 2516h
+    lds     dx, DWORD PTR [cs:oldint16ptr]
+    int     21h
+    ; Return to caller environment
 	pop		ds
 	pop		bp
 	retf
