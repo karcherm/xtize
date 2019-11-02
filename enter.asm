@@ -125,7 +125,9 @@ emu_redo:
 below_enter:
 	cmp		al, 068h
 	je		emulate_push16
-	jb		below_push16
+    jnb     NOT_below_push16
+	jmp		below_push16
+NOT_below_push16:
 	cmp     al, 06Ah
 	ja		between_6A_and_C8
 	jnb		NOT_emulate_imul
@@ -146,6 +148,9 @@ between_6A_and_C8:
 
 	add		al, 12h		; C0 -> D2, C1 -> D3
 	mov		BYTE PTR [cs:sr_patch_opcode], al
+    add     al, 86h - 0D2h ; generate 8-bit/16-bit XCHG opcode
+	mov		BYTE PTR [cs:sr_xchg1], al
+	mov		BYTE PTR [cs:sr_xchg2], al
 	lodsb				; Fetch mod/RM byte
 	mov		ah, al
 	or		al, 0C0h	; set memory operand to AX/AL (for shift/rotate)
