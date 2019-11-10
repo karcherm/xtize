@@ -127,37 +127,24 @@ uhloop:
     jmp     $-1
 
 emulate_enter:
-    cmp     byte ptr [ds:si+2], 0h  ; we don't support nested frame enter
+    lodsw
+    mov     WORD PTR [cs:enter_immed], ax
+    lodsb
+    cmp     al, 0                 ; we don't support nested frame enter
     jne     unhandled
-    mov     ax, WORD PTR [cs:emuss_oldbp]
-    xchg    ax, [bp + 4] ; replace caller flags by old bp (PUSH BP)
-
-    add     sp, 4                 ; for PUSH BP
-    mov     WORD PTR [cs:emuss_oldbp], sp  ; MOV BP, SP part of ENTER
-
-    sub     sp, word ptr [si]     ; SUB SP,#imm16 part of ENTER
-    add     si, 3
-elcommon:
-    sub     sp, 6
-elcommon_:
-    mov     bp, sp
-    mov     [bp + 0], si          ; original IP
-    mov     [bp + 2], ds          ; original CS
-    mov     [bp + 4], ax          ; original flags
-    jmp     emu_redo
+    mov     [bp + 0], OFFSET enter_inject
+    jmp     exit_for_reenter
 
 emulate_leave:
-    mov     ax, [bp + 4]          ; get original flags
-    mov     sp, WORD PTR [cs:emuss_oldbp] ; MOV SP, BP part of LEAVE
-    pop     WORD PTR [cs:emuss_oldbp]     ; POP BP part of LEAVE
-    jmp     elcommon
+    mov     [bp + 0], OFFSET leave_inject
+    jmp     exit_for_reenter
 
 emulate_push16:
     lodsw
 pushcommon:
-    xchg    ax, [bp + 4] ; replace caller flags by old bp (PUSH BP)
-    sub     sp, 2
-    jmp     elcommon_
+    mov     WORD PTR [cs:push_immed], ax
+    mov     [bp + 0], OFFSET push_inject
+    jmp     exit_for_reenter
 
 IF DEBUG
 printhex16:
@@ -185,9 +172,6 @@ printhex4:
 ENDIF
 
 ; Entry-Points:
-;  emu_redo - jump here instead of emu_exit if an instruction has
-;             been completely emulated, and emuss_oldXX contain
-;             the new register values.
 ;  emu_reenter - jump here if an injected function is finished.
 ;                store oldbp before jumping here, and create a correct
 ;                interrupt stack frame returning to the final target
@@ -199,7 +183,6 @@ emu_reenter:
     mov     WORD PTR [cs:emuss_oldds], ds
     mov     WORD PTR [cs:emuss_oldax], ax
     mov     WORD PTR [cs:emuss_oldbx], bx
-emu_redo:
     mov     bp, sp
     cld
     mov     ds, [bp + 2] ; caller CS
@@ -428,4 +411,20 @@ imul_srcax_inject:
     xchg    ax, bx
     jmp     prepare_reenter
 
+push_immed  dw ?
+push_inject:
+    push    WORD PTR [cs:push_immed]
+    jmp     prepare_reenter
+
+enter_inject:
+    push    bp
+    mov     bp, sp
+    sub     sp, 1234h
+  enter_immed = $-2
+    jmp     prepare_reenter
+
+leave_inject:
+    mov     sp, bp
+    pop     bp
+    jmp     prepare_reenter
 END
