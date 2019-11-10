@@ -91,6 +91,10 @@ PUBLIC _GetCount
 
 dispatch_table1:
     db      256 dup (0)
+    org dispatch_table1 + 07h   ; POP ES
+    db      16
+    org dispatch_table1 + 37h   ; POP DS
+    db      18
     org dispatch_table1 + 068h
     db      6                   ; PUSH imm16
     db      10                  ; IMUL r16, r/m16, imm16
@@ -115,6 +119,8 @@ dispatch_table2:
     dw      OFFSET emulate_imul
     dw      OFFSET emulate_shiftrotate
     dw      OFFSET emulate_movsreg
+    dw      OFFSET emulate_pop_es
+    dw      OFFSET emulate_pop_ds
 
 uhmsg:
     db      "286 emulation failed", 0
@@ -300,6 +306,14 @@ movsreg_ofs_common:
     mov     [bp + 0], OFFSET movsreg_inject ; return IP
     jmp     exit_for_reenter
 
+emulate_pop_ds:
+    mov     [bp + 0], OFFSET pop_ds_inject
+    jmp     exit_for_reenter
+
+emulate_pop_es:
+    mov     [bp + 0], OFFSET pop_es_inject
+    jmp     exit_for_reenter
+
 emulate_imul:
     mov     ah, al
     lodsb
@@ -463,4 +477,12 @@ movsreg_inject:
   movsreg_instruction = $
     mov     ds, WORD PTR ds:1234h
     jmp     prepare_reenter
+
+pop_es_inject:
+    pop     es
+    jmp     NEAR PTR prepare_reenter
+
+pop_ds_inject:
+    pop     ds
+    jmp     NEAR PTR prepare_reenter
 END
