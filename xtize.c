@@ -79,6 +79,7 @@ int main(int argc, char** argv)
         unsigned shl_80_3;
         unsigned char rol_F7_2;
         unsigned mul_3_4, mul_6_8, mul_2_5, mul_7_11;
+        unsigned tempds, tempes;
         puts("Test mode.");
         setvect(0xA1, EmulatingSS);
         asm {
@@ -139,6 +140,28 @@ int main(int argc, char** argv)
             //imul    ax, ax, 11
             db      0x6B, 0xC0, 0x0B
             mov     [mul_7_11], ax
+
+            mov     ax, es
+            int 0xA1
+            mov     es, ax
+
+            mov     ax, ss
+            int 0xA1
+            mov     ss, ax
+
+            push    ds
+
+            push    cs
+            int 0xA1
+            pop     ds
+            mov     [tempds], ds
+
+            pop     ds
+
+            push    cs
+            int 0xA1
+            pop     es
+            mov     [tempes], es
         }
         leave_bp = _BP;
         leave_sp = _SP;
@@ -153,6 +176,8 @@ int main(int argc, char** argv)
         ASSERT_EQ(6*8,         mul_6_8);
         ASSERT_EQ(2*5,         mul_2_5);
         ASSERT_EQ(7*11,        mul_7_11);
+        ASSERT_EQ(_CS,         tempds);
+        ASSERT_EQ(_CS,         tempes);
         return 0;
     }
     target = searchpath(argv[1]);
