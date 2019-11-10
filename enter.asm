@@ -369,8 +369,6 @@ imul_immed_done:
 ;  3. we want all registers restored, so we can blindly copy the
 ;     addressing scheme from the 286 instruction into the xchg
 ;     instructions
-; This design is silly, because
-;  1. after IRET, the TF is set, so this code gets traced by the emulator
 ; This design is broken, because
 ;  1. after IRET, the IF is set, so an interrupt might occur while running
 ;     the self-modifying, non-reentrant code here. This does not matter
