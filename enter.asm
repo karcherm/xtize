@@ -177,6 +177,7 @@ emu_reenter:
     mov     WORD PTR [cs:emuss_oldbx], bx
 emu_redo:
     mov     bp, sp
+    cld
     mov     ds, [bp + 2] ; caller CS
     mov     si, [bp + 0] ; caller IP
     lodsb
