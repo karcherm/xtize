@@ -1,5 +1,7 @@
 .MODEL LARGE
 
+DEBUG = 1
+
 .CODE
 
 ; Wrapper for int16 that ensures calling INT16 does not clear the TF.
@@ -157,6 +159,31 @@ pushcommon:
     sub     sp, 2
     jmp     elcommon_
 
+IF DEBUG
+printhex16:
+    xchg    ah,al
+    call    printhex8
+    xchg    ah,al
+printhex8:
+    push    ax
+    shr     ax,1
+    shr     ax,1
+    shr     ax,1
+    shr     ax,1
+    call    printhex4
+    pop     ax
+printhex4:
+    and     al, 0Fh
+    add     al, 90h
+    daa
+    adc     al, 40h
+    daa
+    mov     [es:bx], al
+    mov     BYTE PTR [es:bx+1], 0Fh
+    add     bx,2
+    ret
+ENDIF
+
 ; Entry-Points:
 ;  emu_redo - jump here instead of emu_exit if an instruction has
 ;             been completely emulated, and emuss_oldXX contain
@@ -177,6 +204,20 @@ emu_redo:
     cld
     mov     ds, [bp + 2] ; caller CS
     mov     si, [bp + 0] ; caller IP
+IF DEBUG
+    push    es
+    mov     ax, 0B800h
+    mov     es, ax
+    mov     bx, 0
+    mov     ax, ds
+    call    printhex16
+    mov     ax, si
+    call    printhex16
+    mov     bx, 200h
+    dec     bx
+    jnz     $-1
+    pop     es
+ENDIF
     lodsb
     mov     ah, 0
     mov     bx, ax
