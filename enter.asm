@@ -111,12 +111,9 @@ dispatch_table2:
     dw      OFFSET emulate_imul
     dw      OFFSET emulate_shiftrotate
 
-; Error message with courtesy to a well-known un-fellow from the MBR
 uhmsg:
-    db      "286 CHECK", 0
+    db      "286 emulation failed", 0
 unhandled:
-    mov     ax,1h
-    int     10h
     mov     ah, 0eh
     mov     si, offset uhmsg
 uhloop:
