@@ -96,6 +96,8 @@ dispatch_table1:
     db      10                  ; IMUL r16, r/m16, imm16
     db      8                   ; PUSH imm8
     db      10                  ; IMUL r16, r/m16, imm8
+    org dispatch_table1 + 08Eh
+    db      14                  ; MOV sreg, r/m16
     org dispatch_table1 + 0C0h
     db      12                  ; shift/rotate r8, imm8
     db      12                  ; shift/rotate r16, imm8
@@ -112,6 +114,7 @@ dispatch_table2:
     dw      OFFSET emulate_push8
     dw      OFFSET emulate_imul
     dw      OFFSET emulate_shiftrotate
+    dw      OFFSET emulate_movsreg
 
 uhmsg:
     db      "286 emulation failed", 0
@@ -268,6 +271,34 @@ emu_exit:
     mov     bx, 1234h
     emuss_oldbx = $-2
     iret
+
+emulate_movsreg:
+    lodsb               ; Fetch mod/RM byte
+    mov     BYTE PTR [cs:movsreg_instruction+1], al
+    xor     al, 010h    ; Fudge register number, so that SS gets zero
+    test    al, 38h     ; Z if destionation of SS
+    jz      emu_exit    ; -> execute it natively.
+    and     al, 0C7h    ; clear destination register
+    cmp     al, 06h     ; special encoding for baseless 16-bit address
+    jne     movsreg_not_mem16
+    mov     al, 80h     ; replace mode by something with a 16-bit offset
+movsreg_not_mem16:
+    sub     al, 40h     ; 00..3F = 8bit, 40..7F = 16bit, 80..FF = nothing
+    js      movsreg_no_offset
+    cmp     al, 40h
+    jae     movsreg_offset16
+    lodsb
+    mov     ah, 90h
+    jmp     SHORT movsreg_ofs_common
+movsreg_offset16:
+    lodsw
+    jmp     SHORT movsreg_ofs_common
+movsreg_no_offset:
+    mov     ax, 9090h
+movsreg_ofs_common:
+    mov     WORD PTR [cs:movsreg_instruction+2], ax
+    mov     [bp + 0], OFFSET movsreg_inject ; return IP
+    jmp     exit_for_reenter
 
 emulate_imul:
     mov     ah, al
@@ -426,5 +457,10 @@ enter_inject:
 leave_inject:
     mov     sp, bp
     pop     bp
+    jmp     prepare_reenter
+
+movsreg_inject:
+  movsreg_instruction = $
+    mov     ds, WORD PTR ds:1234h
     jmp     prepare_reenter
 END
