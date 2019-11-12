@@ -488,9 +488,9 @@ movsreg_inject:
 
 pop_es_inject:
     pop     es
-    jmp     NEAR PTR prepare_reenter
+    jmp     prepare_reenter
 
 pop_ds_inject:
     pop     ds
-    jmp     NEAR PTR prepare_reenter
+    jmp     prepare_reenter
 END
