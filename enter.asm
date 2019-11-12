@@ -158,6 +158,10 @@ emulate_leave:
     mov     [bp + 0], OFFSET leave_inject
     jmp     exit_for_reenter
 
+emulate_push8:
+    lodsb
+    cbw
+    db      0B3h  ; MOV BL, xxh (kills lodsw)
 emulate_push16:
     lodsw
 pushcommon:
@@ -189,47 +193,6 @@ printhex4:
     add     bx,2
     ret
 ENDIF
-
-; Entry-Points:
-;  emu_reenter - jump here if an injected function is finished.
-;                store oldbp before jumping here, and create a correct
-;                interrupt stack frame returning to the final target
-_EmulatingSS:
-PUBLIC _EmulatingSS
-    mov     WORD PTR [cs:emuss_oldbp], bp
-emu_reenter:
-    mov     WORD PTR [cs:emuss_oldsi], si
-    mov     WORD PTR [cs:emuss_oldds], ds
-    mov     WORD PTR [cs:emuss_oldax], ax
-    mov     WORD PTR [cs:emuss_oldbx], bx
-    mov     bp, sp
-    cld
-    mov     ds, [bp + 2] ; caller CS
-    mov     si, [bp + 0] ; caller IP
-IF DEBUG
-    push    es
-    mov     ax, 0B800h
-    mov     es, ax
-    mov     bx, 0
-    mov     ax, ds
-    call    printhex16
-    mov     ax, si
-    call    printhex16
-    mov     bx, 200h
-    dec     bx
-    jnz     $-1
-    pop     es
-ENDIF
-    lodsb
-    mov     ah, 0
-    mov     bx, ax
-    mov     bl, BYTE PTR cs:[bx + offset dispatch_table1]
-    jmp     WORD PTR cs:[bx + offset dispatch_table2]
-
-emulate_push8:
-    lodsb
-    cbw
-    jmp     pushcommon
 
 emulate_shiftrotate:
     add     al, 12h     ; C0 -> D2, C1 -> D3
@@ -267,24 +230,43 @@ ofs_common:
     lodsb
     mov     BYTE PTR [cs:sr_patch_count], al
     mov     [bp + 0], OFFSET sr_inject ; return IP
-exit_for_reenter:
-    mov     [bp + 2], cs ; return CS
-    and     BYTE PTR [bp + 5], NOT 1        ; Clear TF
-    mov     WORD PTR [cs:reenter_offset], si
-    mov     WORD PTR [cs:reenter_segment], ds
-emu_exit:
-    mov     si, 1234h
-    emuss_oldds = $-2
-    mov     ds, si
-    mov     si, 1234h
-    emuss_oldsi = $-2
-    mov     bp, 1234h
-    emuss_oldbp = $-2
-    mov     ax, 1234h
-    emuss_oldax = $-2
-    mov     bx, 1234h
-    emuss_oldbx = $-2
-    iret
+    jmp     exit_for_reenter
+
+; Entry-Points:
+;  emu_reenter - jump here if an injected function is finished.
+;                store oldbp before jumping here, and create a correct
+;                interrupt stack frame returning to the final target
+_EmulatingSS:
+PUBLIC _EmulatingSS
+    mov     WORD PTR [cs:emuss_oldbp], bp
+emu_reenter:
+    mov     WORD PTR [cs:emuss_oldsi], si
+    mov     WORD PTR [cs:emuss_oldds], ds
+    mov     WORD PTR [cs:emuss_oldax], ax
+    mov     WORD PTR [cs:emuss_oldbx], bx
+    mov     bp, sp
+    cld
+    mov     ds, [bp + 2] ; caller CS
+    mov     si, [bp + 0] ; caller IP
+IF DEBUG
+    push    es
+    mov     ax, 0B800h
+    mov     es, ax
+    mov     bx, 0
+    mov     ax, ds
+    call    printhex16
+    mov     ax, si
+    call    printhex16
+    mov     bx, 200h
+    dec     bx
+    jnz     $-1
+    pop     es
+ENDIF
+    lodsb
+    mov     ah, 0
+    mov     bx, ax
+    mov     bl, BYTE PTR cs:[bx + offset dispatch_table1]
+    jmp     WORD PTR cs:[bx + offset dispatch_table2]
 
 emulate_movsreg:
     lodsb               ; Fetch mod/RM byte
@@ -312,7 +294,24 @@ movsreg_no_offset:
 movsreg_ofs_common:
     mov     WORD PTR [cs:movsreg_instruction+2], ax
     mov     [bp + 0], OFFSET movsreg_inject ; return IP
-    jmp     exit_for_reenter
+exit_for_reenter:
+    mov     [bp + 2], cs ; return CS
+    and     BYTE PTR [bp + 5], NOT 1        ; Clear TF
+    mov     WORD PTR [cs:reenter_offset], si
+    mov     WORD PTR [cs:reenter_segment], ds
+emu_exit:
+    mov     si, 1234h
+    emuss_oldds = $-2
+    mov     ds, si
+    mov     si, 1234h
+    emuss_oldsi = $-2
+    mov     bp, 1234h
+    emuss_oldbp = $-2
+    mov     ax, 1234h
+    emuss_oldax = $-2
+    mov     bx, 1234h
+    emuss_oldbx = $-2
+    iret
 
 emulate_pop_ds:
     mov     [bp + 0], OFFSET pop_ds_inject
