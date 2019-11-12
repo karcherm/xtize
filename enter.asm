@@ -89,38 +89,48 @@ PUBLIC _GetCount
     mov     dx, [cs:WORD PTR count+2]
     retf
 
-dispatch_table1:
-    db      256 dup (0)
-    org dispatch_table1 + 07h   ; POP ES
-    db      16
-    org dispatch_table1 + 37h   ; POP DS
-    db      18
-    org dispatch_table1 + 068h
-    db      6                   ; PUSH imm16
-    db      10                  ; IMUL r16, r/m16, imm16
-    db      8                   ; PUSH imm8
-    db      10                  ; IMUL r16, r/m16, imm8
-    org dispatch_table1 + 08Eh
-    db      14                  ; MOV sreg, r/m16
-    org dispatch_table1 + 0C0h
-    db      12                  ; shift/rotate r8, imm8
-    db      12                  ; shift/rotate r16, imm8
-    org dispatch_table1 + 0C8h
-    db      2                   ; ENTER
-    db      4                   ; LEAVE
-    org dispatch_table1 + 100h
-
 dispatch_table2:
+  idx_emu_exit            = $ - OFFSET dispatch_table2
     dw      OFFSET emu_exit
+  idx_emulate_enter       = $ - OFFSET dispatch_table2
     dw      OFFSET emulate_enter
+  idx_emulate_leave       = $ - OFFSET dispatch_table2
     dw      OFFSET emulate_leave
+  idx_emulate_push16      = $ - OFFSET dispatch_table2
     dw      OFFSET emulate_push16
+  idx_emulate_push8       = $ - OFFSET dispatch_table2
     dw      OFFSET emulate_push8
+  idx_emulate_imul        = $ - OFFSET dispatch_table2
     dw      OFFSET emulate_imul
+  idx_emulate_shiftrotate = $ - OFFSET dispatch_table2
     dw      OFFSET emulate_shiftrotate
+  idx_emulate_movsreg     = $ - OFFSET dispatch_table2
     dw      OFFSET emulate_movsreg
+  idx_emulate_pop_es      = $ - OFFSET dispatch_table2
     dw      OFFSET emulate_pop_es
+  idx_emulate_pop_ds      = $ - OFFSET dispatch_table2
     dw      OFFSET emulate_pop_ds
+
+dispatch_table1:
+    db      256 dup (idx_emu_exit)
+  org dispatch_table1 + 07h
+    db      idx_emulate_pop_es        ; POP ES
+  org dispatch_table1 + 37h
+    db      idx_emulate_pop_ds        ; POP DS
+  org dispatch_table1 + 068h
+    db      idx_emulate_push16        ; PUSH imm16
+    db      idx_emulate_imul          ; IMUL r16, r/m16, imm16
+    db      idx_emulate_push8         ; PUSH imm8
+    db      idx_emulate_imul          ; IMUL r16, r/m16, imm8
+  org dispatch_table1 + 08Eh
+    db      idx_emulate_movsreg       ; MOV sreg, r/m16
+  org dispatch_table1 + 0C0h
+    db      idx_emulate_shiftrotate   ; shift/rotate r8, imm8
+    db      idx_emulate_shiftrotate   ; shift/rotate r16, imm8
+  org dispatch_table1 + 0C8h
+    db      idx_emulate_enter         ; ENTER
+    db      idx_emulate_leave         ; LEAVE
+  org dispatch_table1 + 100h
 
 uhmsg:
     db      "286 emulation failed", 0
@@ -262,8 +272,6 @@ exit_for_reenter:
     and     BYTE PTR [bp + 5], NOT 1        ; Clear TF
     mov     WORD PTR [cs:reenter_offset], si
     mov     WORD PTR [cs:reenter_segment], ds
-below_push16:
-between_C1_and_C8:
 emu_exit:
     mov     si, 1234h
     emuss_oldds = $-2
