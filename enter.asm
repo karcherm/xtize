@@ -4,23 +4,6 @@ DEBUG = 1
 
 .CODE
 
-; Wrapper for int16 that ensures calling INT16 does not clear the TF.
-; Many PC BIOSes terminate function 01 (Poll keyboard status) with RETF 2
-; instead of IRET to pass the zero flag to the caller. This misses re-setting
-; the TF, thus effectively disabling the emulator.
-HelperInt16:
-    pushf
-    db      09Ah    ; CALL FAR
-oldint16ptr dd ?
-    push    bp
-    mov     bp, sp
-    push    ax
-    lahf
-    mov     [bp + 6], ah    ; Low 8 bits include all status flags except V
-    pop     ax
-    pop     bp
-    iret
-
 oldsp   dw ?
 oldss   dw ?
 
@@ -29,16 +12,6 @@ PUBLIC  _EnterSingleStep
     push    bp
     mov     bp,sp
     push    ds
-    ; Install TF-resetting helper
-    mov     ax, 3516h
-    int     21h
-    mov     WORD PTR [cs:oldint16ptr], bx
-    mov     WORD PTR [cs:oldint16ptr+2], es
-    mov     ax, 2516h
-    push    cs
-    pop     ds
-    mov     dx, OFFSET HelperInt16
-    int     21h
     ; Activate callee PSP
     les     si, [bp + 6]      ; state block
     mov     bx, [es:si + 22]  ; new PSP
@@ -67,10 +40,6 @@ RETURNTO:
     ; Restore stack
     mov     ss, [cs:oldss]
     mov     sp, [cs:oldsp]
-    ; Uninstall helpers
-    mov     ax, 2516h
-    lds     dx, DWORD PTR [cs:oldint16ptr]
-    int     21h
     ; Return to caller environment
     pop     ds
     pop     bp
@@ -92,6 +61,7 @@ PUBLIC _GetCount
 dispatch_table2:
   idx_emu_exit            = $ - OFFSET dispatch_table2
     dw      OFFSET emu_exit
+; The instructions until the next comment are not 8088 compatible. They are trapped and emulated.
   idx_emulate_enter       = $ - OFFSET dispatch_table2
     dw      OFFSET emulate_enter
   idx_emulate_leave       = $ - OFFSET dispatch_table2
@@ -104,12 +74,15 @@ dispatch_table2:
     dw      OFFSET emulate_imul
   idx_emulate_shiftrotate = $ - OFFSET dispatch_table2
     dw      OFFSET emulate_shiftrotate
+; The instructions after this comment are 8088 compatible. They are trapped to assist single-stepping.
   idx_emulate_movsreg     = $ - OFFSET dispatch_table2
     dw      OFFSET emulate_movsreg
   idx_emulate_pop_es      = $ - OFFSET dispatch_table2
     dw      OFFSET emulate_pop_es
   idx_emulate_pop_ds      = $ - OFFSET dispatch_table2
     dw      OFFSET emulate_pop_ds
+  idx_emulate_int         = $ - OFFSET dispatch_table2
+    dw      OFFSET emulate_int
 
 dispatch_table1:
     db      256 dup (idx_emu_exit)
@@ -130,6 +103,8 @@ dispatch_table1:
   org dispatch_table1 + 0C8h
     db      idx_emulate_enter         ; ENTER
     db      idx_emulate_leave         ; LEAVE
+  org dispatch_table1 + 0CDh
+    db      idx_emulate_int           ; INT xx
   org dispatch_table1 + 100h
 
 uhmsg:
@@ -245,6 +220,8 @@ emu_reenter:
     mov     WORD PTR [cs:emuss_oldax], ax
     mov     WORD PTR [cs:emuss_oldbx], bx
     mov     bp, sp
+    test    BYTE PTR [bp + 5], 1     ; Called without TF - either interrupt entry or while quitting emulator
+    jz      emu_exit
     cld
     mov     ds, [bp + 2] ; caller CS
     mov     si, [bp + 0] ; caller IP
@@ -319,6 +296,24 @@ emulate_pop_ds:
 
 emulate_pop_es:
     mov     [bp + 0], OFFSET pop_es_inject
+    jmp     exit_for_reenter
+
+emulate_int:
+    lodsb
+    ; DOS interrupts 20h (terminate) and 27h (TSR) are sensitive to caller's CS,
+    ; so we may not trap them. DOS function 00 is equvalent to interrupt 20h, so the
+    ; don't-trap requirement applies there, too.
+    cmp     al, 20h
+    je      emu_exit
+    cmp     al, 27h
+    je      emu_exit
+    cmp     al, 21h
+    jne     int_do_it
+    cmp     BYTE PTR [cs:emuss_oldax], 00h
+    je      emu_exit
+int_do_it:
+    mov     [bp + 0], OFFSET int_inject
+    mov     BYTE PTR [cs:intnumber], al
     jmp     exit_for_reenter
 
 emulate_imul:
@@ -492,4 +487,10 @@ pop_es_inject:
 pop_ds_inject:
     pop     ds
     jmp     prepare_reenter
+
+int_inject:
+    int     99h
+  intnumber = $-1
+    jmp     prepare_reenter
+
 END
