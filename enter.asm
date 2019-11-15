@@ -88,7 +88,7 @@ dispatch_table1:
     db      256 dup (idx_emu_exit)
   org dispatch_table1 + 07h
     db      idx_emulate_pop_es        ; POP ES
-  org dispatch_table1 + 37h
+  org dispatch_table1 + 1Fh
     db      idx_emulate_pop_ds        ; POP DS
   org dispatch_table1 + 068h
     db      idx_emulate_push16        ; PUSH imm16
