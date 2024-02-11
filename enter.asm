@@ -309,7 +309,7 @@ emulate_int:
     je      emu_exit
     cmp     al, 21h
     jne     int_do_it
-    cmp     BYTE PTR [cs:emuss_oldax], 00h
+    cmp     BYTE PTR [cs:emuss_oldax + 1], 00h
     je      emu_exit
 int_do_it:
     mov     [bp + 0], OFFSET int_inject
